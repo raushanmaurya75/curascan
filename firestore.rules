@@ -1,0 +1,17 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Allow users to create and manage their own user document
+    match /users/{userId} {
+      // Allow creation during signup (even if not fully authenticated yet)
+      allow create: if request.auth != null && request.auth.uid == userId;
+      // Allow read/write for authenticated user's own document
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+    
+    // Allow all authenticated users to read and write other collections (for testing)
+    match /{document=**} {
+      allow read, write: if request.auth != null;
+    }
+  }
+}
