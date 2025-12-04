@@ -3,15 +3,40 @@ import 'package:http/http.dart' as http;
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 class AIService {
-  static String get apiKey => dotenv.env['GEMINI_API_KEY'] ?? '';
+  static String get apiKey {
+    try {
+      return dotenv.env['GEMINI_API_KEY'] ?? '';
+    } catch (e) {
+      return '';
+    }
+  }
+
   static const String baseUrl = "https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent";
-  
-  static bool get isApiKeyConfigured => apiKey.isNotEmpty && apiKey != 'YOUR_GEMINI_API_KEY_HERE';
+
+  static bool get isApiKeyConfigured {
+    final key = apiKey;
+    return key.isNotEmpty && key != 'YOUR_GEMINI_API_KEY_HERE';
+  }
+
+  // Ensure dotenv is loaded before making API calls
+  static Future<void> _ensureDotenvLoaded() async {
+    if (!dotenv.isInitialized) {
+      try {
+        await dotenv.load(fileName: ".env");
+      } catch (e) {
+        // .env file might not exist, that's okay
+        print('Warning: Could not load .env file: $e');
+      }
+    }
+  }
 
   static Future<Map<String, dynamic>> analyzeFoodForUser({
     required String extractedText,
     required Map<String, dynamic> userProfile,
   }) async {
+    // Ensure dotenv is loaded before accessing API key
+    await _ensureDotenvLoaded();
+
     if (!isApiKeyConfigured) {
       throw Exception('Gemini API key not configured. Please add your API key to the .env file.');
     }
@@ -112,10 +137,13 @@ Focus on their specific medical conditions, allergies, and health goals. Be spec
   }
 
   static Future<Map<String, dynamic>> generateMealPlan(Map<String, dynamic> userProfile) async {
+    // Ensure dotenv is loaded before accessing API key
+    await _ensureDotenvLoaded();
+
     if (!isApiKeyConfigured) {
       throw Exception('Gemini API key not configured. Please add your API key to the .env file.');
     }
-    
+
     try {
       final prompt = _buildMealPlanPrompt(userProfile);
       

@@ -11,8 +11,29 @@ class PrescriptionService {
   static final FirebaseAuth _auth = FirebaseAuth.instance;
 
   // Get API key from environment variables
-  static String get _apiKey => dotenv.env['GEMINI_API_KEY'] ?? '';
-  static bool get isApiKeyConfigured => _apiKey.isNotEmpty && _apiKey != 'YOUR_GEMINI_API_KEY_HERE';
+  static String get _apiKey {
+    try {
+      return dotenv.env['GEMINI_API_KEY'] ?? '';
+    } catch (e) {
+      return '';
+    }
+  }
+
+  static bool get isApiKeyConfigured {
+    final key = _apiKey;
+    return key.isNotEmpty && key != 'YOUR_GEMINI_API_KEY_HERE';
+  }
+
+  // Ensure dotenv is loaded before making API calls
+  static Future<void> _ensureDotenvLoaded() async {
+    if (!dotenv.isInitialized) {
+      try {
+        await dotenv.load(fileName: ".env");
+      } catch (e) {
+        // .env file might not exist, that's okay
+      }
+    }
+  }
 
   static Future<String> extractTextFromImage(File imageFile) async {
     try {
@@ -25,6 +46,9 @@ class PrescriptionService {
   }
 
   static Future<Map<String, dynamic>> parseTextToProfile(String extractedText) async {
+    // Ensure dotenv is loaded before accessing API key
+    await _ensureDotenvLoaded();
+
     if (!isApiKeyConfigured) {
       throw Exception('Gemini API key not configured. Please add your API key to the .env file.');
     }
