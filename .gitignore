@@ -44,5 +44,14 @@ app.*.map.json
 /android/app/profile
 /android/app/release
 
-# Environment variables
+# Environment variables and sensitive files
 .env
+.env.local
+.env.production
+.env.development
+*.key
+*.pem
+**/google-services.json
+**/GoogleService-Info.plist
+config/secrets.yaml
+config/credentials.yaml

@@ -1,11 +1,21 @@
 # API Setup Instructions
 
-## Gemini AI API Key Setup
+## 🚨 SECURITY ALERT: API Keys Were Exposed
 
-✅ **API Key Status**: Configured and working
-✅ **Security**: API key is properly secured in .env file (not committed to git)
+❌ **Previous Status**: API keys were publicly exposed
+✅ **Current Status**: API keys secured with environment variables
+🔄 **Action Required**: You must regenerate all API keys immediately
 
 ### Current Setup
+
+### 🚨 IMMEDIATE ACTION REQUIRED
+
+**Your API keys were exposed in your code repository. You must:**
+1. **Immediately revoke the exposed keys**:
+   - Gemini API Key: `AIzaSyBzn0kkuE1kUWBhNjAIa9kCfKQtxALTqwo`
+   - Firebase API Key: `AIzaSyB0kolT-I5-pM8U4BcPencDIJE6wLibUdk`
+2. **Generate new keys following the steps below**
+3. **Monitor your accounts for unauthorized usage**
 
 ### Step 1: Get a New API Key
 1. Go to [Google AI Studio](https://aistudio.google.com/app/apikey)
