@@ -52,8 +52,10 @@ class DefaultFirebaseOptions {
     }
   }
 
+  // Note: Firebase API keys are designed to be public and are protected by
+  // Firebase Security Rules, not by hiding the key. This is safe to commit.
   static const FirebaseOptions android = FirebaseOptions(
-    apiKey: String.fromEnvironment('FIREBASE_API_KEY', defaultValue: 'YOUR_FIREBASE_API_KEY_HERE'),
+    apiKey: 'AIzaSyB0kolT-I5-pM8U4BcPencDIJE6wLibUdk',
     appId: '1:102933201712:android:5594365f60b3fc16fbfef5',
     messagingSenderId: '102933201712',
     projectId: 'curascan-6780f',
