@@ -15,21 +15,14 @@ import 'services/analytics_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  
-  // Load environment variables first
-  await dotenv.load(fileName: ".env");
-  
-  // Lock orientation to portrait only
+
+  // Lock orientation immediately (non-blocking)
   SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp,
     DeviceOrientation.portraitDown,
   ]);
-  
-  // Initialize Firebase
-  await Firebase.initializeApp(
-    options: DefaultFirebaseOptions.currentPlatform,
-  );
-  
+
+  // Show app immediately with loading state, then initialize in background
   runApp(const CuraScanApp());
 }
 
@@ -41,18 +34,48 @@ class CuraScanApp extends StatefulWidget {
 }
 
 class _CuraScanAppState extends State<CuraScanApp> {
+  bool _isInitialized = false;
+  bool _initializationError = false;
+
   @override
   void initState() {
     super.initState();
-    _initializeServices();
+    _initializeApp();
   }
 
-  void _initializeServices() async {
-    // Initialize heavy services in background
-    MobileAds.instance.initialize();
-    tz.initializeTimeZones();
-    AlarmService.initialize();
-    AnalyticsService.logAppOpen();
+  Future<void> _initializeApp() async {
+    try {
+      // Load environment variables and Firebase in parallel for faster startup
+      await Future.wait([
+        dotenv.load(fileName: ".env").catchError((_) {}), // Don't fail if .env missing
+        Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform),
+      ]);
+
+      // Initialize non-critical services in background (don't wait)
+      _initializeBackgroundServices();
+
+      if (mounted) {
+        setState(() => _isInitialized = true);
+      }
+    } catch (e) {
+      print('Error initializing app: $e');
+      if (mounted) {
+        setState(() {
+          _initializationError = true;
+          _isInitialized = true; // Still show UI to handle error
+        });
+      }
+    }
+  }
+
+  void _initializeBackgroundServices() {
+    // These run in background, don't block UI
+    Future.microtask(() {
+      MobileAds.instance.initialize();
+      tz.initializeTimeZones();
+      AlarmService.initialize();
+      AnalyticsService.logAppOpen();
+    });
   }
 
   @override
@@ -66,8 +89,48 @@ class _CuraScanAppState extends State<CuraScanApp> {
         colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF00796B)),
         scaffoldBackgroundColor: const Color(0xFFF0F4F7),
       ),
-      navigatorObservers: [AnalyticsService.observer],
-      home: const AuthWrapper(),
+      navigatorObservers: _isInitialized ? [AnalyticsService.observer] : [],
+      home: _isInitialized ? const AuthWrapper() : const FastSplashScreen(),
+    );
+  }
+}
+
+// Lightweight splash screen that shows immediately while app initializes
+class FastSplashScreen extends StatelessWidget {
+  const FastSplashScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: Container(
+        width: double.infinity,
+        height: double.infinity,
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            colors: [Color(0xFFE0F7FA), Color(0xFFF0F4F7)],
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+          ),
+        ),
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Image.asset(
+                'assets/images/curascan_transparent_croped.png',
+                width: MediaQuery.of(context).size.width * 0.6,
+                errorBuilder: (context, error, stackTrace) {
+                  return const Icon(Icons.healing_outlined, size: 72, color: Color(0xFF00796B));
+                },
+              ),
+              const SizedBox(height: 20),
+              const CircularProgressIndicator(
+                valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF00796B)),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
@@ -122,8 +185,8 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
       _dotsCtrl.repeat();
     });
 
-    // Reduced splash time for faster startup
-    Future.delayed(const Duration(milliseconds: 1500), () {
+    // Reduced splash time for faster startup (800ms is enough for branding)
+    Future.delayed(const Duration(milliseconds: 800), () {
       if (mounted) {
         Navigator.of(context).pushReplacement(
           MaterialPageRoute(builder: (context) => const OnboardingScreen()),
