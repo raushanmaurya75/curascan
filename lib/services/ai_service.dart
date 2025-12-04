@@ -5,11 +5,17 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 class AIService {
   static String get apiKey => dotenv.env['GEMINI_API_KEY'] ?? '';
   static const String baseUrl = "https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent";
+  
+  static bool get isApiKeyConfigured => apiKey.isNotEmpty && apiKey != 'YOUR_NEW_API_KEY_HERE';
 
   static Future<Map<String, dynamic>> analyzeFoodForUser({
     required String extractedText,
     required Map<String, dynamic> userProfile,
   }) async {
+    if (!isApiKeyConfigured) {
+      throw Exception('Gemini API key not configured. Please add your API key to the .env file.');
+    }
+    
     try {
       final prompt = _buildPrompt(extractedText, userProfile);
       
@@ -32,8 +38,10 @@ class AIService {
         final aiResponse = data["candidates"]?[0]?["content"]?["parts"]?[0]?["text"] ?? "No response received";
         
         return _parseAIResponse(aiResponse);
+      } else if (response.statusCode == 403) {
+        throw Exception('API key is restricted or invalid. Please check your Gemini API key configuration.');
       } else {
-        throw Exception('Failed to get AI response: ${response.statusCode}');
+        throw Exception('Failed to get AI response: ${response.statusCode} - ${response.body}');
       }
     } catch (e) {
       throw Exception('AI analysis failed: $e');
@@ -104,6 +112,10 @@ Focus on their specific medical conditions, allergies, and health goals. Be spec
   }
 
   static Future<Map<String, dynamic>> generateMealPlan(Map<String, dynamic> userProfile) async {
+    if (!isApiKeyConfigured) {
+      throw Exception('Gemini API key not configured. Please add your API key to the .env file.');
+    }
+    
     try {
       final prompt = _buildMealPlanPrompt(userProfile);
       
@@ -126,8 +138,10 @@ Focus on their specific medical conditions, allergies, and health goals. Be spec
         final aiResponse = data["candidates"]?[0]?["content"]?["parts"]?[0]?["text"] ?? "No response received";
         
         return _parseMealPlanResponse(aiResponse);
+      } else if (response.statusCode == 403) {
+        throw Exception('API key is restricted or invalid. Please check your Gemini API key configuration.');
       } else {
-        throw Exception('Failed to get meal plan: ${response.statusCode}');
+        throw Exception('Failed to get meal plan: ${response.statusCode} - ${response.body}');
       }
     } catch (e) {
       return _getDefaultMealPlan();
