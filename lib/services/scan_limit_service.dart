@@ -13,14 +13,30 @@ class ScanLimitService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
   
-  // AdMob Rewarded Ad Unit ID
+  // AdMob Ad Unit IDs
   static const String _rewardedAdUnitId = 'ca-app-pub-5335259902955088/8735853649';
+  static const String _interstitialAdUnitId = 'ca-app-pub-5335259902955088/9797955198';
   
   RewardedAd? _rewardedAd;
+  InterstitialAd? _interstitialAd;
   bool _isAdLoaded = false;
+  bool _isInterstitialLoaded = false;
+  
+  // Callback for real-time scan count updates
+  Function(int)? _onScanCountChanged;
   
   // Getter for rewarded ad
   RewardedAd? get rewardedAd => _rewardedAd;
+  
+  // Set callback for scan count changes
+  void setScanCountCallback(Function(int) callback) {
+    _onScanCountChanged = callback;
+  }
+  
+  // Notify listeners of scan count change
+  void _notifyScanCountChanged(int newCount) {
+    _onScanCountChanged?.call((_dailyLimit - newCount).clamp(0, _dailyLimit));
+  }
 
   // Get current scan count from Firestore
   Future<int> getCurrentScanCount() async {
@@ -50,10 +66,14 @@ class ScanLimitService {
     if (user == null || !await canScan()) return false;
     
     final current = await getCurrentScanCount();
+    final newCount = current + 1;
     await _firestore.collection('users').doc(user.uid).update({
-      'dailyScanCount': current + 1,
+      'dailyScanCount': newCount,
       'lastScanDate': FieldValue.serverTimestamp(),
     });
+    
+    // Notify listeners immediately
+    _notifyScanCountChanged(newCount);
     return true;
   }
 
@@ -67,6 +87,9 @@ class ScanLimitService {
     await _firestore.collection('users').doc(user.uid).update({
       'dailyScanCount': newCount,
     });
+    
+    // Notify listeners immediately
+    _notifyScanCountChanged(newCount);
   }
 
   // Initialize new user with free scans
@@ -155,11 +178,57 @@ class ScanLimitService {
     return false;
   }
 
-  // Check if ad is ready
+  // Load interstitial ad
+  Future<void> loadInterstitialAd() async {
+    await InterstitialAd.load(
+      adUnitId: _interstitialAdUnitId,
+      request: const AdRequest(),
+      adLoadCallback: InterstitialAdLoadCallback(
+        onAdLoaded: (ad) {
+          _interstitialAd = ad;
+          _isInterstitialLoaded = true;
+          _setInterstitialCallbacks();
+        },
+        onAdFailedToLoad: (error) {
+          print('Interstitial ad failed to load: $error');
+          _isInterstitialLoaded = false;
+        },
+      ),
+    );
+  }
+
+  // Set interstitial ad callbacks
+  void _setInterstitialCallbacks() {
+    _interstitialAd?.fullScreenContentCallback = FullScreenContentCallback(
+      onAdDismissedFullScreenContent: (ad) {
+        ad.dispose();
+        _interstitialAd = null;
+        _isInterstitialLoaded = false;
+        loadInterstitialAd(); // Load next ad
+      },
+      onAdFailedToShowFullScreenContent: (ad, error) {
+        ad.dispose();
+        _interstitialAd = null;
+        _isInterstitialLoaded = false;
+        loadInterstitialAd(); // Load next ad
+      },
+    );
+  }
+
+  // Show interstitial ad
+  Future<void> showInterstitialAd() async {
+    if (_isInterstitialLoaded && _interstitialAd != null) {
+      await _interstitialAd!.show();
+    }
+  }
+
+  // Check if ads are ready
   bool isAdReady() => _isAdLoaded;
+  bool isInterstitialReady() => _isInterstitialLoaded;
 
   // Dispose
   void dispose() {
     _rewardedAd?.dispose();
+    _interstitialAd?.dispose();
   }
 }

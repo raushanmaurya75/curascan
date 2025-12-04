@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
 import 'package:image_picker/image_picker.dart';
@@ -6,6 +7,7 @@ import 'dart:io';
 import 'package:image/image.dart' as img;
 import 'services/ai_service.dart';
 import 'services/user_profile_service.dart';
+import 'services/camera_service.dart';
 import 'result.dart';
 
 // Color Palette (same as home.dart)
@@ -17,6 +19,8 @@ const Color cardWhite = Color(0xFFFFFFFF);
 const Color textDark = Color(0xFF212121);
 const Color textLight = Color(0xFF757575);
 const Color shadowDark = Color(0xFFC5DDE8);
+
+
 
 class ScanFoodPage extends StatefulWidget {
   final VoidCallback? onScanComplete;
@@ -45,14 +49,15 @@ class _ScanFoodPageState extends State<ScanFoodPage> {
   Future<void> _initializeCamera() async {
     try {
       cameras = await availableCameras();
-      if (cameras != null && cameras!.isNotEmpty) {
+      if (cameras!.isNotEmpty) {
         _cameraController = CameraController(
-          cameras![0], // Use the first (back) camera
-          ResolutionPreset.high,
+          cameras![0],
+          ResolutionPreset.medium,
           enableAudio: false,
         );
-
+        
         await _cameraController!.initialize();
+        
         if (mounted) {
           setState(() {
             isCameraInitialized = true;
@@ -60,10 +65,16 @@ class _ScanFoodPageState extends State<ScanFoodPage> {
         }
       }
     } catch (e) {
-      print('Error initializing camera: $e');
+      print('Camera error: $e');
       if (mounted) {
+        setState(() {
+          isCameraInitialized = true;
+        });
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to initialize camera: $e')),
+          const SnackBar(
+            content: Text('Camera unavailable. Use gallery instead.'),
+            backgroundColor: Colors.orange,
+          ),
         );
       }
     }
@@ -281,24 +292,44 @@ class _ScanFoodPageState extends State<ScanFoodPage> {
       if (mounted) {
         Navigator.of(context).pop(); // Close loading
         
-        // Call the scan complete callback to deduct scan count
-        widget.onScanComplete?.call();
+        // Check if analysis was successful (not an error response)
+        final isSuccessful = analysisResult['title'] != null && 
+                           !analysisResult['title'].toString().contains('Error') &&
+                           !analysisResult['title'].toString().contains('Unavailable') &&
+                           !analysisResult['title'].toString().contains('Issue');
         
-        Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (context) => FoodAnalysisResultPage(
-              scannedImage: capturedImage,
-              extractedText: extractedText,
-              analysisResult: analysisResult,
+        if (isSuccessful) {
+          // Only deduct scan count on successful analysis
+          widget.onScanComplete?.call();
+          
+          Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (context) => FoodAnalysisResultPage(
+                scannedImage: capturedImage,
+                extractedText: extractedText,
+                analysisResult: analysisResult,
+              ),
             ),
-          ),
-        );
+          );
+        } else {
+          // Show error message instead of navigating
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('AI Analysis Error: ${analysisResult['summary'] ?? 'Service unavailable'}'),
+              backgroundColor: Colors.red,
+              duration: const Duration(seconds: 4),
+            ),
+          );
+        }
       }
     } catch (e) {
       if (mounted) {
         Navigator.of(context).pop(); // Close loading
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Analysis failed: $e')),
+          SnackBar(
+            content: Text('Analysis failed: $e'),
+            backgroundColor: Colors.red,
+          ),
         );
       }
     }
@@ -462,9 +493,43 @@ class _ScanFoodPageState extends State<ScanFoodPage> {
           elevation: 0,
           title: const Text('Food Label Scanner'),
           centerTitle: true,
+          iconTheme: const IconThemeData(color: textDark),
         ),
-        body: const Center(
-          child: CircularProgressIndicator(color: primaryGreen),
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const CircularProgressIndicator(color: primaryGreen),
+              const SizedBox(height: 20),
+              Text(
+                'Preparing camera...',
+                style: TextStyle(
+                  color: textDark,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'This will only take a moment',
+                style: TextStyle(
+                  color: textLight,
+                  fontSize: 14,
+                ),
+              ),
+              const SizedBox(height: 20),
+              // Add gallery option while camera loads
+              ElevatedButton.icon(
+                onPressed: _pickImageFromGallery,
+                icon: const Icon(Icons.photo_library),
+                label: const Text('Use Gallery Instead'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: primaryGreen,
+                  foregroundColor: cardWhite,
+                ),
+              ),
+            ],
+          ),
         ),
       );
     }
@@ -480,11 +545,33 @@ class _ScanFoodPageState extends State<ScanFoodPage> {
       ),
       body: Stack(
         children: [
-          // Camera Preview
+          // Camera Preview with error handling
           SizedBox(
             width: double.infinity,
             height: double.infinity,
-            child: CameraPreview(_cameraController!),
+            child: _cameraController != null && _cameraController!.value.isInitialized
+                ? CameraPreview(_cameraController!)
+                : Container(
+                    color: Colors.black,
+                    child: Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.camera_alt, color: cardWhite, size: 64),
+                          const SizedBox(height: 16),
+                          Text(
+                            'Camera not available',
+                            style: TextStyle(color: cardWhite, fontSize: 16),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            'Use gallery button below',
+                            style: TextStyle(color: cardWhite.withOpacity(0.7), fontSize: 14),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
           ),
 
           // Overlay with scanning hint

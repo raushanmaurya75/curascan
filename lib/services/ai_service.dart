@@ -1,32 +1,138 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'remote_config_service.dart';
 
 class AIService {
-  static String get apiKey {
-    try {
-      return dotenv.env['GEMINI_API_KEY'] ?? '';
-    } catch (e) {
-      return '';
+  static String _cachedApiKey = '';
+  
+  static Future<String> get apiKey async {
+    // Try cached key first
+    if (_cachedApiKey.isNotEmpty) {
+      return _cachedApiKey;
     }
+    
+    // Try environment variables first (for local development)
+    try {
+      final envKey = dotenv.env['GEMINI_API_KEY'];
+      if (envKey != null && envKey.isNotEmpty && envKey != 'YOUR_GEMINI_API_KEY_HERE') {
+        _cachedApiKey = envKey;
+        print('🔑 API Key loaded from environment');
+        return envKey;
+      }
+    } catch (e) {
+      print('⚠️ Environment file not loaded');
+    }
+    
+    // Try Firebase Remote Config (for production)
+    final remoteKey = await RemoteConfigService.getGeminiApiKey();
+    if (remoteKey.isNotEmpty) {
+      _cachedApiKey = remoteKey;
+      return remoteKey;
+    }
+    
+    print('❌ No API key found in any source');
+    return '';
   }
 
-  static const String baseUrl = "https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent";
+  static const String baseUrl = "https://generativelanguage.googleapis.com/v1beta/models";
+  static String _selectedModel = "gemini-2.5-flash";
+  
+  static String get generateUrl => "https://generativelanguage.googleapis.com/v1beta/models/$_selectedModel:generateContent";
 
-  static bool get isApiKeyConfigured {
-    final key = apiKey;
+  static Future<bool> get isApiKeyConfigured async {
+    final key = await apiKey;
     return key.isNotEmpty && key != 'YOUR_GEMINI_API_KEY_HERE';
   }
 
-  // Ensure dotenv is loaded before making API calls
+  static Future<void> _selectBestModel() async {
+    try {
+      final key = await apiKey;
+      final response = await http.get(
+        Uri.parse("$baseUrl?key=$key"),
+        headers: {"Content-Type": "application/json"},
+      );
+      
+      print('🌐 Model list API response: ${response.statusCode}');
+      
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        final models = data['models'] as List;
+        
+        print('📋 Available models for your API key:');
+        for (final model in models) {
+          final name = model['name'] as String;
+          final methods = model['supportedGenerationMethods'] as List?;
+          print('  - $name (methods: ${methods?.join(", ") ?? "none"})');
+        }
+        
+        // Priority order for model selection (use working models)
+        final preferredModels = [
+          'gemini-2.5-flash',
+          'gemini-flash-latest',
+          'gemini-pro-latest', 
+          'gemini-2.0-flash',
+        ];
+        
+        // Find preferred model that supports generateContent
+        for (final preferred in preferredModels) {
+          final fullModelName = 'models/$preferred';
+          final model = models.firstWhere(
+            (m) => m['name'] == fullModelName,
+            orElse: () => null,
+          );
+          
+          if (model != null) {
+            final supportedMethods = model['supportedGenerationMethods'] as List?;
+            if (supportedMethods?.contains('generateContent') == true) {
+              print('✅ Using preferred model: $preferred');
+              _selectedModel = preferred;
+              return;
+            }
+          }
+        }
+        
+        // Fallback: find any model that supports generateContent
+        for (final model in models) {
+          final supportedMethods = model['supportedGenerationMethods'] as List?;
+          if (supportedMethods?.contains('generateContent') == true) {
+            final fullModelName = model['name'] as String;
+            final modelName = fullModelName.replaceFirst('models/', '');
+            print('✅ Using fallback model: $modelName');
+            _selectedModel = modelName;
+            return;
+          }
+        }
+      } else {
+        print('❌ Failed to get models: ${response.statusCode} - ${response.body}');
+      }
+      
+      print('⚠️ Using default model: gemini-2.5-flash');
+      _selectedModel = 'gemini-2.5-flash';
+    } catch (e) {
+      print('💥 Error getting models: $e');
+      _selectedModel = 'gemini-2.5-flash';
+    }
+  }
+
   static Future<void> _ensureDotenvLoaded() async {
     if (!dotenv.isInitialized) {
       try {
         await dotenv.load(fileName: ".env");
+        print('✅ Environment loaded');
       } catch (e) {
-        // .env file might not exist, that's okay
-        print('Warning: Could not load .env file: $e');
+        print('⚠️ .env file not found');
+        return;
       }
+    }
+    
+    final currentApiKey = await apiKey;
+    if (currentApiKey.isNotEmpty) {
+      print('🔑 API Key configured: true');
+      // Always get available models first
+      await _selectBestModel();
+    } else {
+      print('⚠️ API Key not configured');
     }
   }
 
@@ -37,15 +143,28 @@ class AIService {
     // Ensure dotenv is loaded before accessing API key
     await _ensureDotenvLoaded();
 
-    if (!isApiKeyConfigured) {
-      throw Exception('Gemini API key not configured. Please add your API key to the .env file.');
+    // Check API key after loading environment
+    final currentApiKey = await apiKey;
+    if (currentApiKey.isEmpty) {
+      return {
+        "recommendation": "CAUTION",
+        "title": "AI Analysis Unavailable",
+        "summary": "AI analysis requires API key configuration.",
+        "reasons": ["API key not configured", "Please set up .env file with GEMINI_API_KEY"],
+        "nutritionalHighlights": ["Manual review required"],
+        "alternatives": ["Review ingredients manually", "Consult healthcare provider"],
+        "healthImpact": "Please review the product label manually and consult with a healthcare provider if needed."
+      };
     }
     
     try {
       final prompt = _buildPrompt(extractedText, userProfile);
+      final url = "$generateUrl?key=$currentApiKey";
+      print('🌐 Making API request to Gemini API');
+      print('📝 Request payload size: ${prompt.length} characters');
       
       final response = await http.post(
-        Uri.parse("$baseUrl?key=$apiKey"),
+        Uri.parse(url),
         headers: {"Content-Type": "application/json"},
         body: json.encode({
           "contents": [
@@ -57,6 +176,11 @@ class AIService {
           ]
         }),
       );
+      
+      print('📡 Response status: ${response.statusCode}');
+      if (response.statusCode != 200) {
+        print('❌ Response body: ${response.body}');
+      }
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
@@ -64,12 +188,38 @@ class AIService {
         
         return _parseAIResponse(aiResponse);
       } else if (response.statusCode == 403) {
-        throw Exception('API key is restricted or invalid. Please check your Gemini API key configuration.');
+        return {
+          "recommendation": "CAUTION",
+          "title": "API Key Issue",
+          "summary": "API key is restricted or invalid.",
+          "reasons": ["API key configuration issue", "Please check your API key setup"],
+          "nutritionalHighlights": ["Manual review required"],
+          "alternatives": ["Review ingredients manually", "Consult healthcare provider"],
+          "healthImpact": "Please review the product label manually."
+        };
       } else {
-        throw Exception('Failed to get AI response: ${response.statusCode} - ${response.body}');
+        print('❌ API Error ${response.statusCode}: ${response.body}');
+        return {
+          "recommendation": "CAUTION",
+          "title": "Service Unavailable (${response.statusCode})",
+          "summary": "AI analysis service returned error ${response.statusCode}.",
+          "reasons": ["API Error: ${response.statusCode}", "Response: ${response.body.length > 100 ? response.body.substring(0, 100) + '...' : response.body}"],
+          "nutritionalHighlights": ["Manual review recommended"],
+          "alternatives": ["Review ingredients manually", "Consult healthcare provider"],
+          "healthImpact": "Please review the product label manually."
+        };
       }
     } catch (e) {
-      throw Exception('AI analysis failed: $e');
+      print('💥 Exception in AI analysis: $e');
+      return {
+        "recommendation": "CAUTION",
+        "title": "Analysis Error",
+        "summary": "Unable to complete AI analysis: ${e.toString()}",
+        "reasons": ["Technical error: ${e.toString()}", "Please try again later"],
+        "nutritionalHighlights": ["Manual review recommended"],
+        "alternatives": ["Review ingredients manually", "Consult healthcare provider"],
+        "healthImpact": "Please review the product label manually and consult with a healthcare provider if needed."
+      };
     }
   }
 
@@ -140,15 +290,16 @@ Focus on their specific medical conditions, allergies, and health goals. Be spec
     // Ensure dotenv is loaded before accessing API key
     await _ensureDotenvLoaded();
 
-    if (!isApiKeyConfigured) {
-      throw Exception('Gemini API key not configured. Please add your API key to the .env file.');
+    final key = await apiKey;
+    if (key.isEmpty) {
+      return _getDefaultMealPlan();
     }
 
     try {
       final prompt = _buildMealPlanPrompt(userProfile);
       
       final response = await http.post(
-        Uri.parse("$baseUrl?key=$apiKey"),
+        Uri.parse("$generateUrl?key=$key"),
         headers: {"Content-Type": "application/json"},
         body: json.encode({
           "contents": [

@@ -52,8 +52,10 @@ class DefaultFirebaseOptions {
     }
   }
 
-  // Note: Firebase API keys are designed to be public and are protected by
-  // Firebase Security Rules, not by hiding the key. This is safe to commit.
+  // ✅ SECURITY NOTE: Firebase API keys are designed to be public and are protected by
+  // Firebase Security Rules, not by hiding the key. This is safe to commit to Git.
+  // This is different from other API keys (like Gemini AI) which must be kept private.
+  // Reference: https://firebase.google.com/docs/projects/api-keys
   static const FirebaseOptions android = FirebaseOptions(
     apiKey: 'AIzaSyB0kolT-I5-pM8U4BcPencDIJE6wLibUdk',
     appId: '1:102933201712:android:5594365f60b3fc16fbfef5',

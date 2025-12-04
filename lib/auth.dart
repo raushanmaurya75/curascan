@@ -61,6 +61,7 @@ class _AuthPageState extends State<AuthPage> with SingleTickerProviderStateMixin
       }
     } on FirebaseAuthException catch (e) {
       String message = 'Login failed';
+      print('Firebase Auth error: ${e.code} - ${e.message}');
       switch (e.code) {
         case 'user-not-found':
           message = 'No account found with this email';
@@ -71,6 +72,13 @@ class _AuthPageState extends State<AuthPage> with SingleTickerProviderStateMixin
           break;
         case 'invalid-email':
           message = 'Invalid email address';
+          break;
+        case 'unknown':
+          if (e.message?.contains('Identity Toolkit API') == true) {
+            message = 'Firebase Authentication is not properly configured. Please contact support.';
+          } else {
+            message = e.message ?? 'Login failed';
+          }
           break;
         default:
           message = e.message ?? 'Login failed';

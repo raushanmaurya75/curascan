@@ -5,20 +5,7 @@ description: "A new Flutter project."
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 uses-material-design: true
 
-  # ----------------------------------------
-  # IMPORTANT: Ensure 'fonts' is indented like this
-fonts:
-  - family: CustomRoboto # Use a unique family name here
-    fonts:
-        # Asset path MUST match the path to your files
-      - asset: assets/fonts/Roboto-Regular.ttf
-      - asset: assets/fonts/Roboto-Light.ttf
-        weight: 300
-      - asset: assets/fonts/Roboto-Bold.ttf
-        weight: 700
-  # ----------------------------------------
-
-  # ... other assets if you have them ...
+  # Font assets removed - using default system fonts
 
 # The following defines the version and build number for your application.
 # A version number is three numbers separated by dots, like 1.2.43
@@ -64,6 +51,7 @@ dependencies:
   firebase_auth: ^4.17.8
   cloud_firestore: ^4.15.8
   firebase_analytics: ^10.8.0
+  firebase_remote_config: ^4.4.0
   image: ^4.5.4
   
   # AI packages
@@ -109,6 +97,7 @@ flutter:
     - assets/images/curascan_transparent_croped.png
     - assets/images/boy.jpg
     - assets/images/Doctor.png
+    - .env
 
   # To add assets to your application, add an assets section, like this:
   # assets:

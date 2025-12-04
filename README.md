@@ -1,16 +1,47 @@
-# curascan
+# CuraScan
 
-A new Flutter project.
+AI-powered food label scanner for personalized health recommendations.
 
-## Getting Started
+## 🚀 Quick Setup
 
-This project is a starting point for a Flutter application.
+### 1. Environment Configuration
 
-A few resources to get you started if this is your first Flutter project:
+**⚠️ IMPORTANT: Set up API keys before running the app**
 
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
+```bash
+# Copy the environment template
+cp .env.example .env
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+# Edit .env and add your actual API keys
+# Get Gemini API key from: https://makersuite.google.com/app/apikey
+
+# Copy Firebase configuration template
+cp android/app/google-services.json.template android/app/google-services.json
+
+# Add your actual Firebase configuration to google-services.json
+```
+
+### 2. Install Dependencies
+
+```bash
+flutter pub get
+```
+
+### 3. Run the App
+
+```bash
+flutter run
+```
+
+## 🔐 Security
+
+- **Never commit `.env` file to version control**
+- API keys are loaded from environment variables only
+- See [SECURITY.md](SECURITY.md) for detailed security guidelines
+
+## 📱 Features
+
+- AI-powered food label scanning
+- Personalized health recommendations
+- User profile management
+- Meal planning suggestions

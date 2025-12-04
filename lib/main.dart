@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -12,6 +13,9 @@ import 'showcase.dart';
 import 'home.dart';
 import 'services/alarm_service.dart';
 import 'services/analytics_service.dart';
+import 'services/remote_config_service.dart';
+import 'services/ai_service.dart';
+import 'services/camera_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -45,12 +49,29 @@ class _CuraScanAppState extends State<CuraScanApp> {
 
   Future<void> _initializeApp() async {
     try {
-      // Load environment variables and Firebase in parallel for faster startup
-      await Future.wait([
-        dotenv.load(fileName: ".env").catchError((_) {}), // Don't fail if .env missing
-        Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform),
-      ]);
+      // Load environment variables first (non-blocking)
+      dotenv.load(fileName: ".env").then((_) {
+        print('✅ Environment variables loaded successfully');
+      }).catchError((e) {
+        print('⚠️ Warning: Could not load .env file: $e');
+      });
+      
+      // Initialize Firebase with timeout to prevent hanging
+      if (Firebase.apps.isEmpty) {
+        await Firebase.initializeApp(
+          options: DefaultFirebaseOptions.currentPlatform
+        ).timeout(
+          const Duration(seconds: 10),
+          onTimeout: () {
+            print('⚠️ Firebase initialization timed out, continuing without it');
+            throw TimeoutException('Firebase init timeout', const Duration(seconds: 10));
+          },
+        );
+      }
 
+      // Initialize critical services immediately for scan functionality
+      await _initializeCriticalServices();
+      
       // Initialize non-critical services in background (don't wait)
       _initializeBackgroundServices();
 
@@ -59,6 +80,8 @@ class _CuraScanAppState extends State<CuraScanApp> {
       }
     } catch (e) {
       print('Error initializing app: $e');
+      // Continue without Firebase if it fails
+      await _initializeCriticalServices();
       if (mounted) {
         setState(() {
           _initializationError = true;
@@ -68,13 +91,48 @@ class _CuraScanAppState extends State<CuraScanApp> {
     }
   }
 
+  Future<void> _initializeCriticalServices() async {
+    // Initialize only services critical for scan functionality
+    try {
+      // Pre-load API key for AI service (critical for scan)
+      await AIService.isApiKeyConfigured;
+      print('✅ AI Service configured');
+      
+      // Pre-initialize camera service for instant scan access
+      await CameraService.initialize();
+      print('✅ Camera Service pre-initialized');
+    } catch (e) {
+      print('⚠️ Critical services initialization failed: $e');
+    }
+  }
+
   void _initializeBackgroundServices() {
     // These run in background, don't block UI
-    Future.microtask(() {
-      MobileAds.instance.initialize();
-      tz.initializeTimeZones();
-      AlarmService.initialize();
-      AnalyticsService.logAppOpen();
+    Future.microtask(() async {
+      try {
+        // Initialize remote config with timeout
+        await RemoteConfigService.getInstance().timeout(
+          const Duration(seconds: 5),
+          onTimeout: () {
+            print('⚠️ Remote config timed out');
+            return RemoteConfigService.getInstance();
+          },
+        );
+        
+        // Initialize other non-critical services
+        MobileAds.instance.initialize();
+        tz.initializeTimeZones();
+        AlarmService.initialize();
+        
+        // Analytics with error handling
+        try {
+          AnalyticsService.logAppOpen();
+        } catch (e) {
+          print('⚠️ Analytics failed: $e');
+        }
+      } catch (e) {
+        print('⚠️ Background services initialization failed: $e');
+      }
     });
   }
 
@@ -172,12 +230,14 @@ class SplashScreen extends StatefulWidget {
 class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMixin {
   late final AnimationController _animCtrl;
   late final AnimationController _dotsCtrl;
+  String _initStatus = 'Initializing...';
 
   @override
   void initState() {
     super.initState();
     _animCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 900));
     _dotsCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 1200));
+    _initializeServices();
     
     // Start animations
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -185,14 +245,22 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
       _dotsCtrl.repeat();
     });
 
-    // Reduced splash time for faster startup (800ms is enough for branding)
-    Future.delayed(const Duration(milliseconds: 800), () {
+    // Extended splash time to allow scan initialization (1500ms for proper setup)
+    Future.delayed(const Duration(milliseconds: 1500), () {
       if (mounted) {
         Navigator.of(context).pushReplacement(
           MaterialPageRoute(builder: (context) => const OnboardingScreen()),
         );
       }
     });
+  }
+  
+  Future<void> _initializeServices() async {
+    if (mounted) setState(() => _initStatus = 'Loading services...');
+    await Future.delayed(const Duration(milliseconds: 300));
+    
+    if (mounted) setState(() => _initStatus = 'Almost ready...');
+    await Future.delayed(const Duration(milliseconds: 300));
   }
 
   @override
@@ -231,6 +299,15 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
                     ),
                     const SizedBox(height: 18),
                     _buildLoadingHint(),
+                    const SizedBox(height: 20),
+                    Text(
+                      _initStatus,
+                      style: const TextStyle(
+                        color: Color(0xFF00796B),
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
                   ],
                 ),
               ),

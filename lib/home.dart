@@ -12,6 +12,7 @@ import 'services/auth_service.dart';
 import 'services/scan_limit_service.dart';
 import 'services/prescription_service.dart';
 import 'services/analytics_service.dart';
+import 'services/camera_service.dart';
 import 'showcase.dart';
 
 // --- UPDATED PREMIUM COLOR PALETTE ---
@@ -297,7 +298,11 @@ class _HomePageState extends State<HomePage> {
     super.initState();
     _loadUserData();
     _initializeScanService();
-    _scanLimitService.loadRewardedAd();
+    // Load ads with delay to ensure MobileAds is initialized
+    Future.delayed(const Duration(seconds: 2), () {
+      _scanLimitService.loadRewardedAd();
+      _scanLimitService.loadInterstitialAd();
+    });
     _pages = <Widget>[
       _HomeContent(
         onStartProfileSetup: _showProfileSetupDialog,
@@ -311,6 +316,16 @@ class _HomePageState extends State<HomePage> {
   
   Future<void> _initializeScanService() async {
     await _scanLimitService.initializeNewUser();
+    
+    // Set up real-time scan count callback
+    _scanLimitService.setScanCountCallback((newRemainingCount) {
+      if (mounted) {
+        setState(() {
+          _remainingScans = newRemainingCount;
+        });
+      }
+    });
+    
     final remaining = await _scanLimitService.getRemainingScanCount();
     setState(() {
       _remainingScans = remaining;
@@ -819,30 +834,44 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  // Navigate to scan with profile and limit check
+  // Navigate to scan with fast checks
   void _navigateToScan() async {
-    final hasProfile = await _checkMedicalProfile();
-    
-    if (!hasProfile) {
-      _showProfileRequiredDialog();
-      return;
-    }
-    
-    final canScan = await _scanLimitService.canScan();
-    if (!canScan) {
+    // Fast scan limit check using cached data
+    if (_remainingScans <= 0) {
       _showScanLimitDialog();
       return;
     }
     
-    AnalyticsService.logFoodScan();
+    // Direct database check for medical profile with error handling
+    final user = _authService.currentUser;
+    if (user != null) {
+      try {
+        final profileDoc = await _firestore
+            .collection('users')
+            .doc(user.uid)
+            .collection('medicalProfile')
+            .doc('current')
+            .get();
+        
+        if (!profileDoc.exists || profileDoc.data()?['profileComplete'] != true) {
+          _showProfileRequiredDialog();
+          return;
+        }
+      } catch (e) {
+        // If Firebase fails, allow navigation but show warning
+        print('Profile check failed: $e');
+      }
+    }
     
-    // Navigate to scan page without deducting scan count
+    // Navigate to scan page
+    AnalyticsService.logFoodScan().catchError((_) {});
+    
     Navigator.of(context).push(
       MaterialPageRoute(builder: (context) => ScanFoodPage(
         onScanComplete: () async {
-          // Deduct scan count only when result is generated
           await _scanLimitService.useScan();
-          await _loadScanLimit();
+          // Show interstitial ad after successful scan (non-blocking)
+          _showInterstitialAfterScan();
         },
       )),
     );
@@ -873,24 +902,7 @@ class _HomePageState extends State<HomePage> {
           ElevatedButton(
             onPressed: () async {
               Navigator.pop(context);
-              if (_scanLimitService.isAdReady()) {
-                _scanLimitService.rewardedAd!.show(
-                  onUserEarnedReward: (ad, reward) async {
-                    await _scanLimitService.addScansFromAd();
-                    await _loadScanLimit();
-                    if (mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Great! You earned 2 more scans!')),
-                      );
-                    }
-                  },
-                );
-              } else {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Ad not ready. Please try again in a moment.')),
-                );
-                _scanLimitService.loadRewardedAd();
-              }
+              await _watchAdForScans();
             },
             style: ElevatedButton.styleFrom(
               backgroundColor: primaryGreen,
@@ -901,6 +913,47 @@ class _HomePageState extends State<HomePage> {
         ],
       ),
     );
+  }
+
+  // Watch ad for additional scans
+  Future<void> _watchAdForScans() async {
+    try {
+      if (!_scanLimitService.isAdReady()) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Loading ad... Please try again in a moment.')),
+        );
+        await _scanLimitService.loadRewardedAd();
+        return;
+      }
+
+      bool adCompleted = false;
+      
+      _scanLimitService.rewardedAd!.show(
+        onUserEarnedReward: (ad, reward) async {
+          adCompleted = true;
+          await _scanLimitService.addScansFromAd();
+          
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: const Text('🎉 Great! You earned 2 more scans!'),
+                backgroundColor: primaryGreen,
+                duration: const Duration(seconds: 3),
+              ),
+            );
+          }
+        },
+      );
+
+
+      
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error loading ad: $e')),
+        );
+      }
+    }
   }
 
   // Show dialog when profile is required
@@ -939,6 +992,17 @@ class _HomePageState extends State<HomePage> {
         ],
       ),
     );
+  }
+
+  // Show interstitial ad after successful scan (non-blocking)
+  void _showInterstitialAfterScan() {
+    Future.delayed(const Duration(milliseconds: 500), () {
+      if (_scanLimitService.isInterstitialReady()) {
+        _scanLimitService.showInterstitialAd();
+      }
+      // Always load next interstitial ad for future scans
+      _scanLimitService.loadInterstitialAd();
+    });
   }
 
   // Show user's medical profile data
