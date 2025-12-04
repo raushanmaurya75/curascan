@@ -109,7 +109,6 @@ flutter:
     - assets/images/curascan_transparent_croped.png
     - assets/images/boy.jpg
     - assets/images/Doctor.png
-    - .env
 
   # To add assets to your application, add an assets section, like this:
   # assets:

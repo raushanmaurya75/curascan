@@ -3,11 +3,16 @@ import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart
 import 'package:google_generative_ai/google_generative_ai.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 class PrescriptionService {
   static final TextRecognizer _textRecognizer = TextRecognizer();
   static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   static final FirebaseAuth _auth = FirebaseAuth.instance;
+
+  // Get API key from environment variables
+  static String get _apiKey => dotenv.env['GEMINI_API_KEY'] ?? '';
+  static bool get isApiKeyConfigured => _apiKey.isNotEmpty && _apiKey != 'YOUR_GEMINI_API_KEY_HERE';
 
   static Future<String> extractTextFromImage(File imageFile) async {
     try {
@@ -20,10 +25,14 @@ class PrescriptionService {
   }
 
   static Future<Map<String, dynamic>> parseTextToProfile(String extractedText) async {
+    if (!isApiKeyConfigured) {
+      throw Exception('Gemini API key not configured. Please add your API key to the .env file.');
+    }
+
     try {
       final model = GenerativeModel(
         model: 'gemini-1.5-flash',
-        apiKey: 'AIzaSyBJhJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJ', // Replace with actual API key
+        apiKey: _apiKey,
       );
 
       final prompt = '''

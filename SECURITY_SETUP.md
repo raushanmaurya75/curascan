@@ -23,7 +23,7 @@ Since your keys were exposed, you should:
 
 **For Gemini API:**
 1. Go to [Google AI Studio](https://aistudio.google.com/app/apikey)
-2. Delete the old exposed key: `AIzaSyBzn0kkuE1kUWBhNjAIa9kCfKQtxALTqwo`
+2. Delete any old exposed keys
 3. Create a new API key
 4. Add restrictions (IP addresses, HTTP referrers)
 

@@ -6,7 +6,7 @@ class AIService {
   static String get apiKey => dotenv.env['GEMINI_API_KEY'] ?? '';
   static const String baseUrl = "https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent";
   
-  static bool get isApiKeyConfigured => apiKey.isNotEmpty && apiKey != 'YOUR_NEW_API_KEY_HERE';
+  static bool get isApiKeyConfigured => apiKey.isNotEmpty && apiKey != 'YOUR_GEMINI_API_KEY_HERE';
 
   static Future<Map<String, dynamic>> analyzeFoodForUser({
     required String extractedText,
